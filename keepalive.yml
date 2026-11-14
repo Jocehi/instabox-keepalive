@@ -1,0 +1,50 @@
+# Instabox keepalive via GitHub Actions — no Cloudflare, no always-on machine.
+#
+# HOW IT WORKS
+# Every 9 minutes GitHub runs the repo's own keepalive.sh once: it renews the
+# activity lease for every machine under your API key, and auto-resumes a
+# suspended machine first (same 409 self-healing as the Worker version).
+#
+# SETUP (3 steps)
+# 1. Create a GitHub repo (PUBLIC is free and unlimited for Actions; a private
+#    repo only gets 2,000 free Actions minutes/month, and ~160 runs/day would
+#    exceed that). The workflow file itself contains no secrets, so public is safe.
+# 2. In that repo: Settings -> Secrets and variables -> Actions -> New repository
+#    secret. Name: INSTABOX_API_KEY, value: your ibk_... key from the Instabox
+#    dashboard (account menu -> Profile -> API keys -> Create Key, Restricted
+#    scope with only machines:write; the key is shown only once).
+# 3. Put this file at .github/workflows/keepalive.yml in the repo (Actions tab
+#    will then show the workflow). Click "Run workflow" once to test it; check
+#    the run log says the lease was renewed.
+#
+# LIMITS (same as the Worker version)
+# - Does NOT bypass the free-tier max run (currently 2h, growing to 8h): at the
+#   cap the platform force-suspends anyway, then the workflow auto-resumes it
+#   after the cooldown ends.
+# - GitHub scheduled runs can start a few minutes late, and GitHub auto-disables
+#   scheduled workflows if the repo has no activity for 60 days (push any small
+#   commit or re-enable it in the Actions tab to restart it).
+# - Cron uses UTC; '*/9 * * * *' means every 9 minutes, timezone-independent.
+
+name: instabox-keepalive
+
+on:
+  schedule:
+    - cron: '*/9 * * * *'
+  workflow_dispatch: # manual "Run workflow" button, for testing
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out keepalive script
+        uses: actions/checkout@v4
+        with:
+          repository: ailg666/instabox-keepalive
+          ref: main
+
+      - name: Renew lease once
+        env:
+          INSTABOX_API_KEY: ${{ secrets.INSTABOX_API_KEY }}
+          key: ${{ secrets.INSTABOX_API_KEY }}
+        run: sh keepalive.sh --once
